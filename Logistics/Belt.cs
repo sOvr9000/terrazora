@@ -313,9 +313,9 @@ public class Belt {
 		length = distToEnd;  // Front portion (B, this belt)
 		newBelt.length = (ushort) (originalLength - distToEnd);  // Rear portion (A, newBelt)
 
-		// Adjust last item's distToNext on this belt (B)
-		// The last item on this belt now terminates at the split point
-		if (allItems.Count > 0) {
+		// Adjust first item's distToNext on the new belt (A)
+		// The first item on this belt now terminates at the split point
+		if (newBelt.allItems.Count > 0) {
 			BeltItem lastOnThisBelt = allItems[allItems.Count - 1];
 			// Calculate distance from this item's back edge to the new end of belt
 			short newDistToNext = (short) (distToFront + Constants.ITEM_SIZE_ON_BELT);
