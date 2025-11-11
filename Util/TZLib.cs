@@ -112,4 +112,22 @@ public static class TZLib {
 	public static string GetFormattedDateTime() {
 		return DateTime.Now.ToString("yyyyMMddHHmmss");
 	}
+
+	/// <summary>
+	/// Return the given number as a string, but pad it on the left and right such that
+	/// one space is put on the left for positive values (assuming the possibility of negatives)
+	/// and the rest of the spaces are put on the right side.
+	/// 
+	/// The total length of the returned string is never smaller than <paramref name="width"/>.
+	/// </summary>
+	/// <param name="value"></param>
+	/// <param name="width"></param>
+	/// <returns></returns>
+	public static string FormatWithSign(int value, int width) {
+		if (value < 0) {
+			return $"-{Math.Abs(value).ToString().PadRight(width - 1)}";
+		} else {
+			return $" {value.ToString().PadRight(width - 1)}";
+		}
+	}
 }

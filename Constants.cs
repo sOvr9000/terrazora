@@ -11,6 +11,6 @@ public static class Constants {
 
 	public const int CONSOLE_MESSAGE_DISPLAY_LIFE = 300;
 
-	public const ushort BELT_SPATIAL_RESOLUTION = 512;
-	public const ushort ITEM_SIZE_ON_BELT = BELT_SPATIAL_RESOLUTION / 2;
+	public const ushort BELT_SPATIAL_RESOLUTION = 1024;
+	public const ushort ITEM_SIZE_ON_BELT = BELT_SPATIAL_RESOLUTION / 4;
 }

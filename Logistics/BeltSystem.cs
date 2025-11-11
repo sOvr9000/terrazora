@@ -25,6 +25,14 @@ public class BeltSystem {
 		}
 	}
 
+	public Belt GetBelt(int id) {
+		Belt belt;
+		if (belts.TryGetValue(id, out belt)) {
+			return belt;
+		}
+		throw new System.Exception($"Belt not found with ID = {id}");
+	}
+
 	/// <summary>
 	/// Add a belt with an auto-generated ID
 	/// </summary>
@@ -108,22 +116,22 @@ public class BeltSystem {
 	/// </summary>
 	public void ConnectBelts(Belt belt1, Belt belt2) {
 		// Validation
-		if (belt1.id == belt2.id || !belts.ContainsKey(belt1.id) || !belts.ContainsKey(belt2.id)) {
+#if UNITY_EDITOR
+		if (belt1.id == belt2.id) {
+			throw new System.Exception("Cannot connect a belt to itself");
+		}
+#endif
+
+		if (!belts.ContainsKey(belt1.id) || !belts.ContainsKey(belt2.id)) {
 			return;
 		}
 
-		// Disconnect any existing output connection from belt1
 		if (belt1.nextBeltId != -1 && belts.ContainsKey(belt1.nextBeltId)) {
-			belts[belt1.nextBeltId].inputBeltIds.Remove(belt1.id);
+			DisconnectBelts(belt1, GetBelt(belt1.nextBeltId));
 		}
 
-		// Make the connection
 		belt1.nextBeltId = belt2.id;
-
-		// Add to inputBeltIds if not already present
-		if (!belt2.inputBeltIds.Contains(belt1.id)) {
-			belt2.inputBeltIds.Add(belt1.id);
-		}
+		belt2.AddInputBeltID(belt1.id);
 
 		// Merge groups if different
 		if (belt1.groupId != belt2.groupId) {
@@ -138,17 +146,25 @@ public class BeltSystem {
 	/// Disconnect two belts and potentially split the group
 	/// </summary>
 	public void DisconnectBelts(Belt belt1, Belt belt2) {
-		if (!belts.ContainsKey(belt1.id) || !belts.ContainsKey(belt2.id)) {
+		if (!belts.ContainsKey(belt1.id) || !belts.ContainsKey(belt2.id) || belt1.nextBeltId != belt2.id) {
 			return;
 		}
 
-		if (belt1.nextBeltId == belt2.id) {
-			belt1.nextBeltId = -1;
-			belt2.inputBeltIds.Remove(belt1.id);
+		belt1.nextBeltId = -1;
+		belt2.RemoveInputBeltID(belt1.id);
 
-			// Check if this split the group into separate components
-			CheckAndSplitGroup(belt1.groupId);
-		}
+		// Check if this split the group into separate components
+		CheckAndSplitGroup(belt1.groupId);
+	}
+
+	/// <summary>
+	/// Return whether <paramref name="belt1"/> is connected to and feeding into <paramref name="belt2"/>.
+	/// </summary>
+	/// <param name="belt1">The upstream belt.</param>
+	/// <param name="belt2">The downstream belt.</param>
+	/// <returns></returns>
+	public bool BeltsAreConnected(Belt belt1, Belt belt2) {
+		return belt1.IsConnectedTo(belt2); // Can possibly change this to check bidirectionally, but that's less consistent with game logic, so that may be more suitable as a different method.
 	}
 
 	/// <summary>
@@ -347,6 +363,18 @@ public class BeltSystem {
 		foreach (var group in groups.Values) {
 			RebuildGroupUpdateOrder(group.id);
 		}
+	}
+
+	public string ToStringDetailed() {
+		string s = $"vv BeltSystem vv\nTotal belts: {belts.Count}\nAll belts:";
+		
+		foreach (Belt belt in belts.Values) {
+			s += $"\n\n{belt.ToString()}\n{belt.DumpCriticalPoints()}";
+		}
+
+		s += "\n^^ BeltSystem ^^";
+
+		return s;
 	}
 }
 

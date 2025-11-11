@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 /// <summary>
@@ -33,7 +34,7 @@ public static class Logger {
 				File.WriteAllText(logFilePath, $"=== Log Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n\n");
 				isInitialized = true;
 			}
-			Debug.Log($"CustomLogger initialized. Log file: {logFilePath}");
+			//Debug.Log($"CustomLogger initialized. Log file: {logFilePath}");
 		} catch (Exception e) {
 			Debug.LogError($"Failed to initialize CustomLogger: {e.Message}");
 		}
@@ -42,8 +43,11 @@ public static class Logger {
 	/// <summary>
 	/// Log a standard info message.
 	/// </summary>
-	public static void Log(string message) {
-		WriteToFile("INFO", message);
+	public static void Log(string message,
+		[CallerFilePath] string filePath = "",
+		[CallerLineNumber] int lineNumber = 0,
+		[CallerMemberName] string memberName = "") {
+		WriteToFile("INFO", message, filePath, lineNumber, memberName);
 		if (alsoLogToConsole) {
 			Debug.Log(message);
 		}
@@ -52,8 +56,11 @@ public static class Logger {
 	/// <summary>
 	/// Log a warning message.
 	/// </summary>
-	public static void LogWarning(string message) {
-		WriteToFile("WARNING", message);
+	public static void LogWarning(string message,
+		[CallerFilePath] string filePath = "",
+		[CallerLineNumber] int lineNumber = 0,
+		[CallerMemberName] string memberName = "") {
+		WriteToFile("WARNING", message, filePath, lineNumber, memberName);
 		if (alsoLogToConsole) {
 			Debug.LogWarning(message);
 		}
@@ -62,8 +69,11 @@ public static class Logger {
 	/// <summary>
 	/// Log an error message.
 	/// </summary>
-	public static void LogError(string message) {
-		WriteToFile("ERROR", message);
+	public static void LogError(string message,
+		[CallerFilePath] string filePath = "",
+		[CallerLineNumber] int lineNumber = 0,
+		[CallerMemberName] string memberName = "") {
+		WriteToFile("ERROR", message, filePath, lineNumber, memberName);
 		if (alsoLogToConsole) {
 			Debug.LogError(message);
 		}
@@ -93,14 +103,22 @@ public static class Logger {
 	}
 
 	// Internal method for thread-safe file writing
-	private static void WriteToFile(string level, string message) {
+	private static void WriteToFile(string level, string message, string filePath, int lineNumber, string memberName) {
 		if (!isInitialized) {
 			Debug.LogWarning("CustomLogger not initialized! Call CustomLogger.Initialize() first.");
 			return;
 		}
 
+		// Convert absolute path to relative path (remove everything before and including "Assets/")
+		string relativePath = filePath;
+		int assetsIndex = filePath.IndexOf("Assets" + Path.DirectorySeparatorChar);
+		if (assetsIndex >= 0) {
+			relativePath = filePath.Substring(assetsIndex + 7); // 7 = "Assets/".Length
+		}
+
 		string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-		string logEntry = $"[{timestamp}] [{level}] {message}\n";
+		string callerInfo = $"{relativePath}:{lineNumber}";
+		string logEntry = $"[{timestamp}] [{level}] [{callerInfo}] {message}\n";
 
 		try {
 			lock (fileLock) {
