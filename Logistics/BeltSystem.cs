@@ -1,12 +1,20 @@
 using System.Collections.Generic;
 
 public class BeltSystem {
+	public class Group {
+		public int id;
+		public HashSet<int> beltIds;
+
+		public Group(int id) {
+			this.id = id;
+			beltIds = new HashSet<int>();
+		}
+	}
 
 	public Dictionary<int, Belt> belts;
 	public List<int> updateOrder;
 
-	// Group management
-	public Dictionary<int, BeltGroup> groups;  // groupId -> BeltGroup
+	public Dictionary<int, Group> groups;  // groupId -> BeltGroup
 	private int nextGroupId = 0;
 
 	private int nextBeltId = 0;
@@ -14,7 +22,7 @@ public class BeltSystem {
 	public BeltSystem() {
 		belts = new Dictionary<int, Belt>();
 		updateOrder = new List<int>();
-		groups = new Dictionary<int, BeltGroup>();
+		groups = new Dictionary<int, Group>();
 	}
 
 	public void Update() {
@@ -41,7 +49,7 @@ public class BeltSystem {
 	}
 
 	/// <summary>
-	/// Add a belt with a specific ID (for multiplayer)
+	/// Add a belt with a specific ID (for netcode)
 	/// </summary>
 	public void AddBelt(Belt belt, int assignedId) {
 		if (belts.ContainsKey(assignedId)) {
@@ -57,15 +65,13 @@ public class BeltSystem {
 
 		belts.Add(belt.id, belt);
 
-		// Create a new group for this belt (will merge later if connected)
 		int groupId = nextGroupId++;
 		belt.groupId = groupId;
 
-		BeltGroup group = new BeltGroup(groupId);
+		Group group = new Group(groupId);
 		group.beltIds.Add(belt.id);
 		groups.Add(groupId, group);
 
-		// Add to update order
 		AddToUpdateOrderIncremental(belt);
 	}
 
@@ -81,19 +87,16 @@ public class BeltSystem {
 		List<int> inputIds = new List<int>(belt.inputBeltIds);
 		int nextId = belt.nextBeltId;
 
-		// Disconnect from input belts
 		foreach (int inputId in inputIds) {
 			if (belts.ContainsKey(inputId)) {
 				belts[inputId].nextBeltId = -1;
 			}
 		}
 
-		// Disconnect from next belt
 		if (belt.nextBeltId != -1 && belts.ContainsKey(belt.nextBeltId)) {
 			belts[belt.nextBeltId].inputBeltIds.Remove(belt.id);
 		}
 
-		// Remove from group
 		if (groups.ContainsKey(groupId)) {
 			groups[groupId].beltIds.Remove(belt.id);
 
@@ -101,12 +104,11 @@ public class BeltSystem {
 			if (groups[groupId].beltIds.Count == 0) {
 				groups.Remove(groupId);
 			} else if (inputIds.Count > 0 && nextId != -1) {
-				// Belt was in the middle of a chain - might need to split group
+				// Belt was in the middle of a chain (might need to split group)
 				CheckAndSplitGroup(groupId);
 			}
 		}
 
-		// Remove from system
 		belts.Remove(belt.id);
 		updateOrder.Remove(belt.id);
 	}
@@ -115,7 +117,6 @@ public class BeltSystem {
 	/// Connect two belts (belt1 outputs to belt2), merging groups if necessary
 	/// </summary>
 	public void ConnectBelts(Belt belt1, Belt belt2) {
-		// Validation
 #if UNITY_EDITOR
 		if (belt1.id == belt2.id) {
 			throw new System.Exception("Cannot connect a belt to itself");
@@ -133,11 +134,9 @@ public class BeltSystem {
 		belt1.nextBeltId = belt2.id;
 		belt2.AddInputBeltID(belt1.id);
 
-		// Merge groups if different
 		if (belt1.groupId != belt2.groupId) {
 			MergeGroups(belt1.groupId, belt2.groupId);
 		} else {
-			// Same group - just rebuild this group's update order
 			RebuildGroupUpdateOrder(belt1.groupId);
 		}
 	}
@@ -153,7 +152,6 @@ public class BeltSystem {
 		belt1.nextBeltId = -1;
 		belt2.RemoveInputBeltID(belt1.id);
 
-		// Check if this split the group into separate components
 		CheckAndSplitGroup(belt1.groupId);
 	}
 
@@ -164,7 +162,8 @@ public class BeltSystem {
 	/// <param name="belt2">The downstream belt.</param>
 	/// <returns></returns>
 	public bool BeltsAreConnected(Belt belt1, Belt belt2) {
-		return belt1.IsConnectedTo(belt2); // Can possibly change this to check bidirectionally, but that's less consistent with game logic, so that may be more suitable as a different method.
+		// Can possibly change this to check bidirectionally, but that's less consistent with game logic, so that may be more suitable as a different method.
+		return belt1.IsConnectedTo(belt2);
 	}
 
 	/// <summary>
@@ -175,7 +174,7 @@ public class BeltSystem {
 			return;
 		}
 
-		// Merge smaller group into larger one for efficiency
+		// Merge smaller group into larger one (more efficient)
 		int keepGroupId, mergeGroupId;
 		if (groups[groupId1].beltIds.Count >= groups[groupId2].beltIds.Count) {
 			keepGroupId = groupId1;
@@ -185,20 +184,14 @@ public class BeltSystem {
 			mergeGroupId = groupId1;
 		}
 
-		// Update all belts in the merged group
 		foreach (int beltId in groups[mergeGroupId].beltIds) {
 			if (belts.ContainsKey(beltId)) {
 				belts[beltId].groupId = keepGroupId;
 			}
 		}
 
-		// Merge the belt ID lists
 		groups[keepGroupId].beltIds.UnionWith(groups[mergeGroupId].beltIds);
-
-		// Remove the old group
 		groups.Remove(mergeGroupId);
-
-		// Rebuild update order for the merged group
 		RebuildGroupUpdateOrder(keepGroupId);
 	}
 
@@ -257,7 +250,7 @@ public class BeltSystem {
 			components.Add(component);
 		}
 
-		// If we found multiple components, split the group
+		// If multiple components, split the group
 		if (components.Count > 1) {
 			// Keep the first component in the original group
 			groups[groupId].beltIds = components[0];
@@ -265,7 +258,7 @@ public class BeltSystem {
 			// Create new groups for the rest
 			for (int i = 1; i < components.Count; i++) {
 				int newGroupId = nextGroupId++;
-				BeltGroup newGroup = new BeltGroup(newGroupId);
+				Group newGroup = new Group(newGroupId);
 				newGroup.beltIds = components[i];
 				groups.Add(newGroupId, newGroup);
 
@@ -286,7 +279,7 @@ public class BeltSystem {
 	}
 
 	/// <summary>
-	/// Rebuild update order for a specific group only (O(group_size))
+	/// Rebuild update order for a specific group only (linear time complexity)
 	/// </summary>
 	private void RebuildGroupUpdateOrder(int groupId) {
 		if (!groups.ContainsKey(groupId)) {
@@ -375,18 +368,5 @@ public class BeltSystem {
 		s += "\n^^ BeltSystem ^^";
 
 		return s;
-	}
-}
-
-/// <summary>
-/// Represents a group of connected belts
-/// </summary>
-public class BeltGroup {
-	public int id;
-	public HashSet<int> beltIds;
-
-	public BeltGroup(int id) {
-		this.id = id;
-		beltIds = new HashSet<int>();
 	}
 }

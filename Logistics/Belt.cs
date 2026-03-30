@@ -36,6 +36,7 @@ public class Belt {
 		allItems = new List<BeltItem>();
 	}
 
+	#region Main
 	public void SetLength(ushort length) {
 		this.length = length;
 		RecalculateRearSpace();
@@ -85,78 +86,6 @@ public class Belt {
 		return (ushort) (reservedFrontSpace - prev);
 	}
 
-	/// <summary>
-	/// Push items on the belt backward, squeezing earlier gaps first.
-	/// Return how much the front item (at index <paramref name="frontIdx"/>) has been pushed backward before hitting maximum compression.
-	/// </summary>
-	/// <param name="frontIdx"></param>
-	/// <param name="curIdx"></param>
-	/// <param name="remainingToMove"></param>
-	public ushort InverseChainUpdate(int frontIdx, int curIdx, ushort remainingToMove) {
-		if (remainingToMove == 0) {
-			return 0;
-		}
-
-#if UNITY_EDITOR
-		if (remainingToMove >= Constants.ITEM_SIZE_ON_BELT) {
-			throw new Exception($"remainingToMove = {remainingToMove} is larger than or equal to the maximum of {Constants.ITEM_SIZE_ON_BELT} (item size on belt)");
-		}
-#endif
-
-		if (curIdx >= allItems.Count) {
-			return 0;
-		}
-
-		BeltItem curItem = allItems[curIdx];
-		ushort toMove = Math.Min(curItem.distToNext, remainingToMove);
-		curItem.distToNext -= toMove;
-		allItems[frontIdx].distToNext += toMove;
-
-		ushort actualMoved = toMove;
-		remainingToMove -= toMove;
-
-		if (curIdx < allItems.Count - 1) {
-			actualMoved += InverseChainUpdate(frontIdx, curIdx + 1, remainingToMove);
-			return actualMoved;
-		}
-
-		short targetRearSpace = (short) Math.Max(rearSpace - remainingToMove, 1 - Constants.ITEM_SIZE_ON_BELT);
-
-		if (targetRearSpace >= 0) {
-			rearSpace = targetRearSpace;
-			allItems[frontIdx].distToNext += remainingToMove;
-			return remainingToMove;
-		}
-
-		short originalRearSpace = rearSpace;
-		rearSpace = targetRearSpace;
-
-		ushort actualRearSpaceAdjustment = remainingToMove;
-		if (inputBeltIds.Count > 0) {
-			actualRearSpaceAdjustment = SetPreviousBeltReservedFrontSpace();
-
-#if UNITY_EDITOR
-			if (actualRearSpaceAdjustment + originalRearSpace < 0) {
-				throw new Exception($"(WARNING: belt is likely in an invalid state now) SetPreviousBeltReservedFrontSpace() returned a value too large ({actualRearSpaceAdjustment}) to add to originalRearSpace = {originalRearSpace} to calculate actualRearSpaceAdjustment.  This might be because the front item on the previous belt is \"pushing forward\" too hard in adjustment from the attempt to push it backward.");
-			}
-#endif
-
-			actualRearSpaceAdjustment = (ushort) (actualRearSpaceAdjustment + originalRearSpace);
-		}
-
-		if (actualRearSpaceAdjustment == remainingToMove) {
-			allItems[frontIdx].distToNext += remainingToMove;
-			return (ushort) (actualMoved + remainingToMove);
-		}
-
-		ushort invalidToMove = (ushort) (remainingToMove - actualRearSpaceAdjustment);
-		allItems[frontIdx].distToNext -= invalidToMove;
-		rearSpace = (short) (originalRearSpace - actualRearSpaceAdjustment);
-
-		actualMoved = (ushort) (toMove + actualRearSpaceAdjustment);
-		return actualMoved;
-	}
-
 	public void RecalculateRearSpace() {
 		int space = length;
 
@@ -181,6 +110,23 @@ public class Belt {
 
 		rearSpace = (short) space;
 	}
+
+	public void Update() {
+#if UNITY_EDITOR
+		VerifySpaces();
+#endif
+
+		if (allItems.Count == 0) {
+			return;
+		}
+
+		ushort moved = 0;
+		ushort carryOverDist = 0;
+		ChainUpdate(speed, ref moved, ref carryOverDist);
+		PostProcessMovedItems(moved, carryOverDist);
+		UpdateCurrentInputBelt();
+	}
+	#endregion
 
 	#region Single Segment
 	public void AddInputBeltID(int beltId) {
@@ -373,22 +319,6 @@ public class Belt {
 		} else if (allItems.Count == 0) {
 			rearSpace = (short) (length - reservedFrontSpace);
 		}
-	}
-
-	public void Update() {
-#if UNITY_EDITOR
-		VerifySpaces();
-#endif
-
-		if (allItems.Count == 0) {
-			return;
-		}
-
-		ushort moved = 0;
-		ushort carryOverDist = 0;
-		ChainUpdate(speed, ref moved, ref carryOverDist);
-		PostProcessMovedItems(moved, carryOverDist);
-		UpdateCurrentInputBelt();
 	}
 
 	private void PostProcessMovedItems(ushort moved, ushort carryOverDist) {
@@ -717,6 +647,78 @@ public class Belt {
 	public bool IsConnectedTo(Belt other) {
 		return nextBeltId == other.id && other.inputBeltIds.Contains(id) && system == other.system;
 	}
+
+	/// <summary>
+	/// Push items on the belt backward, squeezing earlier gaps first.
+	/// Return how much the front item (at index <paramref name="frontIdx"/>) has been pushed backward before hitting maximum compression.
+	/// </summary>
+	/// <param name="frontIdx"></param>
+	/// <param name="curIdx"></param>
+	/// <param name="remainingToMove"></param>
+	public ushort InverseChainUpdate(int frontIdx, int curIdx, ushort remainingToMove) {
+		if (remainingToMove == 0) {
+			return 0;
+		}
+
+#if UNITY_EDITOR
+		if (remainingToMove >= Constants.ITEM_SIZE_ON_BELT) {
+			throw new Exception($"remainingToMove = {remainingToMove} is larger than or equal to the maximum of {Constants.ITEM_SIZE_ON_BELT} (item size on belt)");
+		}
+#endif
+
+		if (curIdx >= allItems.Count) {
+			return 0;
+		}
+
+		BeltItem curItem = allItems[curIdx];
+		ushort toMove = Math.Min(curItem.distToNext, remainingToMove);
+		curItem.distToNext -= toMove;
+		allItems[frontIdx].distToNext += toMove;
+
+		ushort actualMoved = toMove;
+		remainingToMove -= toMove;
+
+		if (curIdx < allItems.Count - 1) {
+			actualMoved += InverseChainUpdate(frontIdx, curIdx + 1, remainingToMove);
+			return actualMoved;
+		}
+
+		short targetRearSpace = (short) Math.Max(rearSpace - remainingToMove, 1 - Constants.ITEM_SIZE_ON_BELT);
+
+		if (targetRearSpace >= 0) {
+			rearSpace = targetRearSpace;
+			allItems[frontIdx].distToNext += remainingToMove;
+			return remainingToMove;
+		}
+
+		short originalRearSpace = rearSpace;
+		rearSpace = targetRearSpace;
+
+		ushort actualRearSpaceAdjustment = remainingToMove;
+		if (inputBeltIds.Count > 0) {
+			actualRearSpaceAdjustment = SetPreviousBeltReservedFrontSpace();
+
+#if UNITY_EDITOR
+			if (actualRearSpaceAdjustment + originalRearSpace < 0) {
+				throw new Exception($"(WARNING: belt is likely in an invalid state now) SetPreviousBeltReservedFrontSpace() returned a value too large ({actualRearSpaceAdjustment}) to add to originalRearSpace = {originalRearSpace} to calculate actualRearSpaceAdjustment.  This might be because the front item on the previous belt is \"pushing forward\" too hard in adjustment from the attempt to push it backward.");
+			}
+#endif
+
+			actualRearSpaceAdjustment = (ushort) (actualRearSpaceAdjustment + originalRearSpace);
+		}
+
+		if (actualRearSpaceAdjustment == remainingToMove) {
+			allItems[frontIdx].distToNext += remainingToMove;
+			return (ushort) (actualMoved + remainingToMove);
+		}
+
+		ushort invalidToMove = (ushort) (remainingToMove - actualRearSpaceAdjustment);
+		allItems[frontIdx].distToNext -= invalidToMove;
+		rearSpace = (short) (originalRearSpace - actualRearSpaceAdjustment);
+
+		actualMoved = (ushort) (toMove + actualRearSpaceAdjustment);
+		return actualMoved;
+	}
 	#endregion
 
 	#region Split
@@ -830,6 +832,48 @@ public class Belt {
 	}
 	#endregion
 
+	#region Sectioning
+	/// <summary>
+	/// Get the items within the given range.  The front and rear sides of an item must both be within the range for it to be included in the list returned by this method.
+	/// </summary>
+	/// <param name="position"></param>
+	/// <param name="range"></param>
+	/// <returns></returns>
+	public List<BeltItem> GetItemsInRange(ushort from, ushort to) {
+		// TODO: Optimize this whole process of finding items' absolute positions on belts
+
+		List<BeltItem> items = new List<BeltItem>();
+		ushort endpoint = Math.Min(to, length);
+
+		ushort currentPos = 0;
+		foreach (var item in allItems) {
+			bool frontInside = false;
+			currentPos += item.distToNext;
+
+			if (currentPos >= endpoint) {
+				break;
+			}
+
+			if (currentPos >= from) {
+				frontInside = true;
+			}
+
+			currentPos += Constants.ITEM_SIZE_ON_BELT;
+
+			if (currentPos >= endpoint) {
+				break;
+			}
+
+			if (frontInside) {
+				items.Add(item);
+			}
+		}
+
+		return items;
+	}
+	#endregion
+
+	#region Debugging
 	public void VerifySpaces() {
 		if (allItems.Count > 0 && reservedFrontSpace > allItems[0].distToNext) {
 			throw new Exception($"reservedFrontSpace={reservedFrontSpace} is larger than the front item's distToNext={allItems[0].distToNext}.  Current belt:\n{ToString()}");
@@ -907,4 +951,5 @@ public class Belt {
 
 		return s;
 	}
+	#endregion
 }
